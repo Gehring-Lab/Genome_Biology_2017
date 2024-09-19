@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
-# v2 - 06/15/2023
-# modifed for python3 usage EAH
+# 06/15/2023 - modifed for python3 usage EAH
 
 # Given an input .bed file containing intervals, returns another .bed file with
 # all windows of width w going O bp outside the feature and I bp inside the feature.
