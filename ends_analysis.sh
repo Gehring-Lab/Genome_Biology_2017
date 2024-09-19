@@ -1,22 +1,8 @@
 #!/bin/bash
 
-# Copyright 2017 Colette L Picard
-
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-
-# http://www.apache.org/licenses/LICENSE-2.0
-
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 # ------------------------------------------------------------------------------------
-# v1.7 by Colette L. Picard
-# 03/27/2017
+# v1.0 by Colette L. Picard
+# 05/08/2015
 # ------------------------------------------------------------------------------------
 
 # Usage:
@@ -54,8 +40,12 @@
 #	- added option -U to allow switching between weighted and unweighted averages across features
 # 	- added option to censor points in plot where fewer than X genes contributed to average value
 # 	- added -B option to plot barchart instead of line plot (don't use with small binsize! try -w 1000)
-# v.1.7: 03/27/2017
-#	- added -l option to modify thickness of lines in plot
+# v.1.7: 03/15/2017
+#	- recent update on the server to bedtools v2.26.0 changed syntax of coverageBed command.
+#	Unfortunately, new version currently only on tak4, regular tak still has v2.23.0 (old syntax)
+#	So script now checks version of bedtools installed and updates coverageBed call accordingly.
+#	Update to syntax is as of bedtools v.2.24.0 so any version >= v.2.24.0 uses new syntax, versions
+# 	< v.2.24.0 will use old.
 # -------------------------
 
 # Plots average coverage of reads in each input file seperately across the start and
@@ -82,7 +72,7 @@
 
 # Description printed when "help" option specified:
 read -d '' usage <<"EOF"
-ends_analysis 	v.1.7		03/27/2017
+ends_analysis 	v.1.6		04/21/16
 Plots average coverage of the provided input reads across the start and end of the 
 provided regions. Number of bases to go outside the feature and into the feature
 can be specified by the user (both default to 1kb). See options -O and -I below.
@@ -176,7 +166,7 @@ useValue=0									# calculate average over this field (if useValue = 0, uses de
 minN=0										# don't plot point for this bin if fewer than this many genes/features were used to calc. it
 linewidth=1
 Verbose=false
-writemat=false
+writemat=true	#EAH I'm trying to force this to work for me, change back to false if needed later.
 overwrite=false
 parallel=false
 unweighted=false
@@ -287,12 +277,30 @@ elif [ ! -f "$path_to_scripts"/ends_analysis_make_plot.R ]; then
 	echo "Error: required helper script $path_to_scripts/ends_analysis_make_plot.R could not be located, see option -s"; exit 1
 fi
 if "$writemat"; then
-	if [ ! -f "$path_to_scripts"/ends_analysis_make_matrix.py ]; then
+	if [ ! -f "$path_to_scripts"/ends_analysis_make_matrix_eah.py ]; then
 		echo "Error: required helper script $path_to_scripts/ends_analysis_make_matrix.py could not be located, see option -s"; exit 1; fi; fi
 
 # Check that all programs required on PATH are installed
 # ----------------------
 command -v bedtools >/dev/null 2>&1 || { echo "Error: bedtools is required but was not found on PATH"; exit 1; }
+
+# Get which version of bedtools is installed (either >= v.2.24.0 [new] or < v.2.24.0 [old])
+# ----------------------
+bedtoolsv=$( bedtools --version | tr "." " " )
+bedtoolsv1=$( echo "$bedtoolsv" | awk '{print $2}' )
+bedtoolsv2=$( echo "$bedtoolsv" | awk '{print $3}' )
+if [ "$bedtoolsv1" = "v2" ]; then
+	if [ $bedtoolsv2 -ge 24 ]; then
+		bedtoolstype="new"
+	else
+		bedtoolstype="old"
+	fi
+else
+	echo "This script was only tested on bedtools v2.xx.xx, your mileage may vary."
+	echo "If you are getting errors or incorrect output, the syntax for the coverageBed command may have changed"
+	echo "and you may need to change it in the script as well. Syntax for bedtools v.2.24.0 used here."
+	bedtoolstype="new"
+fi
 
 # Check that window size is ok
 # ----------------------
@@ -400,7 +408,7 @@ fi
 # ----------------------
 for region in $regions; do
 	cols_in_regions=$( awk -F$'\t' '{print NF}' "$region" | sort -nu | tail -n 1 )
-	[[ "$cols_in_regions" != "6" && "$cols_in_regions" != "4" ]] && { echo "Error: regions file must be in format chr, start, end, name, with optional score, strand - 6 fields total if strand is important, otherwise 4"; exit 1; }
+	#[[ "$cols_in_regions" != "6" && "$cols_in_regions" != "4" ]] && { echo "Error: regions file must be in format chr, start, end, name, with optional score, strand - 6 fields total if strand is important, otherwise 4"; exit 1; }
 done
 
 # If using -V, make sure it's not one of the first 3 fields, since those are chr/start/end
@@ -455,7 +463,7 @@ namearray=( $names )
 colarray=( $colors ) 
 tot_readsarray=( $tot_reads ) 
 [ "$useValue" == "0" ] && { normarray=( $norm ); tot_readsarray=( $tot_reads ) ; }
-mkdir "${outprefix}_LSF_logs"
+mkdir "${outprefix}_SLURM_logs"
 
 # Output user-derived options to stdout and to log file
 # ----------------------
@@ -463,6 +471,9 @@ time_start=$(date)	# time run was started
 time_ss=$(date +%s)	# time run was started (in seconds)
 echo "Running ends_analysis.sh v1.0 (05/08/2015):"
 echo "Run start on: $time_start"
+echo "Version of bedtools installed is: $( bedtools --version | awk '{print $2}' )"
+[ "$bedtoolstype" = "new" ] && echo "Using coverageBed syntax for versions >= v.2.24.0"
+[ "$bedtoolstype" = "old" ] && echo "Using coverageBed syntax for versions < v.2.24.0"
 echo "-------------------------"
 if [[ "$mode" == "infiles" && "$useValue" == "0" ]]; then
 	echo "Calculating average depth over the following files(s):"
@@ -506,11 +517,11 @@ echo "Step 1: Converting provided regions BED file into intervals of width ${wid
 if [ "$mode" == "regions" ]; then
 	for ((i=0;i<${#regionarray[@]};++i)); do
 		echo "Processing ${namearray[i]}..."
-		"$path_to_scripts"/ends_analysis_get_intervals.py "${regionarray[i]}" "${outprefix}_${namearray[i]}.bed" "$width" "$numIn" "$numOut" > "${outprefix}_LSF_logs/ends_analysis_get_intervals_${namearray[i]}.txt"
-		[ $? != 0 ] && { echo "Error: ends_analysis_get_intervals failed for ${namearray[i]}, see ${outprefix}_LSF_logs/ends_analysis_get_intervals_${namearray[i]}.txt"; exit 1; }
+		python3 "$path_to_scripts"/ends_analysis_get_intervals.py "${regionarray[i]}" "${outprefix}_${namearray[i]}.bed" "$width" "$numIn" "$numOut" > "${outprefix}_SLURM_logs/ends_analysis_get_intervals_${namearray[i]}.txt"
+		[ $? != 0 ] && { echo "Error: ends_analysis_get_intervals failed for ${namearray[i]}, see ${outprefix}_SLURM_logs/ends_analysis_get_intervals_${namearray[i]}.txt"; exit 1; }
 	done
 else
-	"$path_to_scripts"/ends_analysis_get_intervals.py "${regionarray[0]}" "${outprefix}_regions.bed" "$width" "$numIn" "$numOut"
+	python3 "$path_to_scripts"/ends_analysis_get_intervals.py "${regionarray[0]}" "${outprefix}_regions.bed" "$width" "$numIn" "$numOut"
 	[ $? != 0 ] && { echo "Error: ends_analysis_get_intervals failed"; exit 1; }
 fi
 echo ""
@@ -532,34 +543,56 @@ for ((i=0;i<${#namearray[@]};++i)); do
 	if "$parallel"; then
 		if ! [ "$useValue" == "0" ]; then
 			if [ "$mode" == "regions" ]; then
+				cols_in_regions=$( awk '{print NF}' "${outprefix}_${namearray[i]}.bed" | sort -nu | tail -n 1 )
 				cmd="bedtools intersect -a ${infilearray[0]} -b ${outprefix}_${namearray[i]}.bed -wa -wb | cut -f ${useValue},$(( ${cols_in_input}+1 ))-$(( ${cols_in_input} + ${cols_in_regions} )) | awk '{ printf \"%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n\", \$2, \$3, \$4, \$5, \$6, \$7, \$8, \$1 }' > ${outprefix}_${namearray[i]}_intersect.bed"
 			else
+				cols_in_input=$( awk '{print NF}' "${infilearray[0]}" | sort -nu | tail -n 1 )
 				cmd="bedtools intersect -a ${infilearray[i]} -b ${outprefix}_regions.bed -wa -wb | cut -f ${useValue},$(( ${cols_in_input}+1 ))-$(( ${cols_in_input} + ${cols_in_regions} )) | awk '{ printf \"%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n\", \$2, \$3, \$4, \$5, \$6, \$7, \$8, \$1 }' > ${outprefix}_${namearray[i]}_intersect.bed"
 			fi
 		else
 			if [ "$mode" == "regions" ]; then
-				cmd="coverageBed -a ${infilearray[0]} -b ${outprefix}_${namearray[i]}.bed | cut -f 1,2,3,4,5,6,7,8 > ${outprefix}_${namearray[i]}_intersect.bed"
+				cols_in_regions=$( awk '{print NF}' "${outprefix}_${namearray[i]}.bed" | sort -nu | tail -n 1 )
+				if [ "$bedtoolstype" = "new" ]; then
+					cmd="coverageBed -b ${infilearray[0]} -a ${outprefix}_${namearray[i]}.bed | cut -f 1,2,3,4,5,6,7,8 > ${outprefix}_${namearray[i]}_intersect.bed"
+				else
+					cmd="coverageBed -a ${infilearray[0]} -b ${outprefix}_${namearray[i]}.bed | cut -f 1,2,3,4,5,6,7,8 > ${outprefix}_${namearray[i]}_intersect.bed"
+				fi
 			else
-				cmd="coverageBed -a ${infilearray[i]} -b ${outprefix}_regions.bed | cut -f 1,2,3,4,5,6,7,8 > ${outprefix}_${namearray[i]}_intersect.bed"
+				cols_in_input=$( awk '{print NF}' "${infilearray[0]}" | sort -nu | tail -n 1 )
+				if [ "$bedtoolstype" = "new" ]; then
+					cmd="coverageBed -b ${infilearray[i]} -a ${outprefix}_regions.bed | cut -f 1,2,3,4,5,6,7,8 > ${outprefix}_${namearray[i]}_intersect.bed"
+				else
+					cmd="coverageBed -a ${infilearray[i]} -b ${outprefix}_regions.bed | cut -f 1,2,3,4,5,6,7,8 > ${outprefix}_${namearray[i]}_intersect.bed"
+				fi
 			fi
 		fi
-		bsub -o "${outprefix}_LSF_logs/intersect_${namearray[i]}.txt" -K "$cmd" & pid[i]=$!
+		sbatch -p 20 --mem=32gb --cpus-per-task=42 --o "${outprefix}_SLURM_logs/intersect_${namearray[i]}.txt"  --wait --wrap""$cmd" & pid[i]=$! "
 	else
 		echo "Processing ${namearray[i]}..."
 		if ! [ "$useValue" == "0" ]; then
 			if [ "$mode" == "regions" ]; then
-				bedtools intersect -a "${infilearray[0]}" -b "${outprefix}_${namearray[i]}.bed" -wa -wb | cut -f ${useValue},$(( ${cols_in_input}+1 ))-$(( ${cols_in_input} + ${cols_in_regions} )) | awk '{ printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", $2, $3, $4, $5, $6, $7, $8, $1 }' > "${outprefix}_${namearray[i]}_intersect.bed"
+				cols_in_regions=$( awk '{print NF}' "${outprefix}_${namearray[i]}.bed" | sort -nu | tail -n 1 )
+				bedtools intersect -a "${infilearray[0]}" -b "${outprefix}_${namearray[i]}.bed" -wa -wb | cut -f ${useValue},$(( ${cols_in_input}+1 ))-$(( ${cols_in_input} + ${cols_in_regions} )) | awk -F$'\t' '{OFS=FS} { print $2, $3, $4, $5, $6, $7, $8, $1 }' > "${outprefix}_${namearray[i]}_intersect.bed"
 				[ $? != 0 ] && { echo "Error: bedtools intersect failed for ${namearray[i]}"; exit 1; }
 			else
-				bedtools intersect -a "${infilearray[i]}" -b "${outprefix}_regions.bed" -wa -wb | cut -f ${useValue},$(( ${cols_in_input}+1 ))-$(( ${cols_in_input} + ${cols_in_regions} )) | awk '{ printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", $2, $3, $4, $5, $6, $7, $8, $1 }' > "${outprefix}_${namearray[i]}_intersect.bed"
+				cols_in_input=$( awk '{print NF}' "${infilearray[0]}" | sort -nu | tail -n 1 )
+				bedtools intersect -a "${infilearray[i]}" -b "${outprefix}_regions.bed" -wa -wb | cut -f ${useValue},$(( ${cols_in_input}+1 ))-$(( ${cols_in_input} + ${cols_in_regions}+1 )) | awk -F$'\t' '{OFS=FS} { print $2, $3, $4, $5, $6, $7, $8, $1 }' > "${outprefix}_${namearray[i]}_intersect.bed"
 				[ $? != 0 ] && { echo "Error: bedtools intersect failed for ${namearray[i]}"; exit 1; }
 			fi
 		else
 			if [ "$mode" == "regions" ]; then
-				coverageBed -a "${infilearray[0]}" -b "${outprefix}_${namearray[i]}.bed" | cut -f 1,2,3,4,5,6,7,8 > "${outprefix}_${namearray[i]}_intersect.bed"
+				if [ "$bedtoolstype" = "new" ]; then
+					coverageBed -b "${infilearray[0]}" -a "${outprefix}_${namearray[i]}.bed" | cut -f 1,2,3,4,5,6,7,8 > "${outprefix}_${namearray[i]}_intersect.bed"
+				else
+					coverageBed -a "${infilearray[0]}" -b "${outprefix}_${namearray[i]}.bed" | cut -f 1,2,3,4,5,6,7,8 > "${outprefix}_${namearray[i]}_intersect.bed"
+				fi					
 				[ $? != 0 ] && { echo "Error: coverageBed failed for ${namearray[i]}"; exit 1; }
 			else
-				coverageBed -a "${infilearray[i]}" -b "${outprefix}_regions.bed" | cut -f 1,2,3,4,5,6,7,8 > "${outprefix}_${namearray[i]}_intersect.bed"
+				if [ "$bedtoolstype" = "new" ]; then
+					coverageBed -b "${infilearray[i]}" -a "${outprefix}_regions.bed" | cut -f 1,2,3,4,5,6,7,8 > "${outprefix}_${namearray[i]}_intersect.bed"
+				else
+					coverageBed -a "${infilearray[i]}" -b "${outprefix}_regions.bed" | cut -f 1,2,3,4,5,6,7,8 > "${outprefix}_${namearray[i]}_intersect.bed"
+				fi					
 				[ $? != 0 ] && { echo "Error: coverageBed failed for ${namearray[i]}"; exit 1; }
 			fi			
 		fi
@@ -567,9 +600,9 @@ for ((i=0;i<${#namearray[@]};++i)); do
 done
 
 for ((i=0;i<${#pid[@]};++i)); do
-	wait "${pid[i]}" || { echo "Error: step 2 failed for ${namearray[i]}, see ${outprefix}_LSF_logs/intersect_${namearray[i]}.txt"; exit 1; }
+	wait "${pid[i]}" || { echo "Error: step 2 failed for ${namearray[i]}, see ${outprefix}_SLURM_logs/intersect_${namearray[i]}.txt"; exit 1; }
 done
-		
+
 if ! "$Verbose"; then 
 	if [ "$mode" == "regions" ]; then
 		for ((i=0;i<${#namearray[@]};++i)); do
@@ -587,13 +620,13 @@ echo ""
 # ----------------------
 echo "Step 3: Getting average counts per bin..."
 for ((i=0;i<${#namearray[@]};++i)); do
-#	awk -F$'\t' 'BEGIN{ OFS = FS } { tt[$7]+=1; ss[$7]+=$8 } END { for (id in tt) {print id,ss[id]/tt[id]} } ' "${outprefix}_${namearray[i]}_intersect.bed" | sort -k1n,1 > "${outprefix}_${namearray[i]}_counts.txt"
+##	awk -F$'\t' 'BEGIN{ OFS = FS } { tt[$7]+=1; ss[$7]+=$8 } END { for (id in tt) {print id,ss[id]/tt[id]} } ' "${outprefix}_${namearray[i]}_intersect.bed" | sort -k1n,1 > "${outprefix}_${namearray[i]}_counts.txt"
 	if [ "$useValue" != "0" ]; then
 		[ "$unweighted" = "true" ] && weight=" --unweighted" || weight=""
 	else
 		weight=" --unweighted"
-	fi
-	$path_to_scripts/ends_analysis_process_intersect.py "${outprefix}_${namearray[i]}_intersect.bed" "${outprefix}_${namearray[i]}_counts.txt"${weight}	
+	fi	
+	python3 $path_to_scripts/ends_analysis_process_intersect_eah.py "${outprefix}_${namearray[i]}_intersect.bed" "${outprefix}_${namearray[i]}_counts.txt"${weight}	
 done
 echo ""
 
@@ -606,16 +639,16 @@ if "$writemat"; then
 		pid=()
 		for ((i=0;i<${#namearray[@]};++i)); do
 	#		echo "Converting results of step 2 into matrix format for ${namearray[i]}..."
-			cmd="$path_to_scripts/ends_analysis_make_matrix.py ${outprefix}_${namearray[i]}_intersect.bed ${outprefix}_${namearray[i]}_mat.txt $numIn $numOut $width"
-			bsub -o "${outprefix}_LSF_logs/make_matrix_${namearray[i]}.txt" -K "$cmd" & pid[i]=$!
+			cmd="python3 $path_to_scripts/ends_analysis_make_matrix_eah.py ${outprefix}_${namearray[i]}_intersect.bed ${outprefix}_${namearray[i]}_mat.txt $numIn $numOut $width"
+			sbatch -p 20 --mem=32gb --cpus-per-task=42 --o "${outprefix}_SLURM_logs/make_matrix_${namearray[i]}.txt" --wait --wrap " "$cmd" & pid[i]=$! "
 		done
 		for ((i=0;i<${#namearray[@]};++i)); do
-			wait "${pid[i]}" || { echo "Error: ends_analysis_make_matrix failed for ${namearray[i]}, see ${outprefix}_LSF_logs/make_matrix_${namearray[i]}.txt"; exit 1; }
+			wait "${pid[i]}" || { echo "Error: ends_analysis_make_matrix failed for ${namearray[i]}, see ${outprefix}_SLURM_logs/make_matrix_${namearray[i]}.txt"; exit 1; }
 		done
 	else
 		for ((i=0;i<${#namearray[@]};++i)); do
 			echo "Converting results of step 2 into matrix format for ${namearray[i]}..."
-			$path_to_scripts/ends_analysis_make_matrix.py "${outprefix}_${namearray[i]}_intersect.bed" "${outprefix}_${namearray[i]}_mat.txt" $numIn $numOut $width
+			python3 $path_to_scripts/ends_analysis_make_matrix_eah.py "${outprefix}_${namearray[i]}_intersect.bed" "${outprefix}_${namearray[i]}_mat.txt" $numIn $numOut $width
 		done
 	fi
 	echo ""
@@ -630,6 +663,7 @@ if [[ "$useValue" == "0" && mode == "infiles" ]]; then
 		normfactor="${normarray[i]}"
 		echo "Normalizing average counts for ${namearray[i]}, norm factor = ${normarray[i]}..."
 		awk -v n=$normfactor '{printf "%s\t%s\n",$1,$2*n}' "${outprefix}_${namearray[i]}_counts.txt" > "${outprefix}_${namearray[i]}_norm.txt"
+		cat "${outprefix}_${namearray[i]}_norm.txt"
 		if [ $? != 0 ] ; then echo "Error: normalizing failed for ${outprefix}_${namearray[i]}_counts.txt"; exit 1; fi
 		[ "$Verbose" = "false" ] && rm "${outprefix}_${namearray[i]}_counts.txt"
 	done
@@ -638,7 +672,8 @@ else
 	for ((i=0;i<${#namearray[@]};++i)); do
 		mv "${outprefix}_${namearray[i]}_counts.txt" "${outprefix}_${namearray[i]}_norm.txt"
 	done
-	echo "Step 4: Normalization is not performed in -V mode, skipping normalization"
+	[ "$mode" = "regions" ] && echo "Step 4: Since analysis is being performed over different regions, no normalization required"
+	[ "$mode" = "infiles" ] && echo "Step 4: Normalization is not performed in -V mode, skipping normalization"
 	echo ""
 fi
 
@@ -662,11 +697,11 @@ awk -F$'\t' -v minN="$minN" '{OFS=FS} {if ($3 >= minN) {print $1,$2,$4} else {pr
 [ -z "$colors" ] && cc=" --colors $colors" || cc=""
 
 if [ -z "$colors" ]; then
-	$path_to_scripts/ends_analysis_make_plot.R "${outprefix}_average_counts_filt.txt" "$yupper" "$ylabel" "$title" "$outprefix" "$numIn" "$numOut" "$width" "$linewidth"${bb} > /dev/null
+	$path_to_scripts/ends_analysis_make_plot.R "${outprefix}_average_counts_filt.txt" "$yupper" "$ylabel" "$title" "$outprefix" "$numIn" "$numOut" "$width" "$linewidth"${bb} > "${outprefix}_SLURM_logs/make_plot.txt"
 else
-	$path_to_scripts/ends_analysis_make_plot.R "${outprefix}_average_counts_filt.txt" "$yupper" "$ylabel" "$title" "$outprefix" "$numIn" "$numOut" "$width" "$linewidth" --colors "$colors"${bb} > /dev/null
+	$path_to_scripts/ends_analysis_make_plot.R "${outprefix}_average_counts_filt.txt" "$yupper" "$ylabel" "$title" "$outprefix" "$numIn" "$numOut" "$width" "$linewidth" --colors "$colors"${bb} > "${outprefix}_SLURM_logs/make_plot.txt"
 fi
-[ $? != 0 ] && { echo "Error: ends_analysis_make_plot failed"; exit 1; }
+[ $? != 0 ] && { echo "Error: ends_analysis_make_plot failed, see ${outprefix}_SLURM_logs/make_plot.txt"; exit 1; }
 
 echo ""
 
@@ -678,7 +713,7 @@ if ! "$Verbose"; then
 		rm "${outprefix}_${namearray[i]}_intersect.bed"
 	done
 fi
-if ! "$Verbose"; then rm -rf "${outprefix}_LSF_logs"; fi
+if ! "$Verbose"; then rm -rf "${outprefix}_SLURM_logs"; fi
 
 time_end=$(date)	# time run was started
 time_es=$(date +%s)	# time run was started

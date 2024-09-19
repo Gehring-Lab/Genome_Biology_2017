@@ -1,18 +1,4 @@
-#!/usr/bin/env python
-
-# Copyright 2017 Colette L Picard
-
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-
-# http://www.apache.org/licenses/LICENSE-2.0
-
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+#!/usr/bin/env python3
 
 # v.1.0 - 06/01/2015
 # v.1.1 - 08/12/2015
@@ -24,6 +10,8 @@
 # v.1.2 - 04/15/2016
 # added third column in output that will contain # of genes/regions that the bin
 # average was calculated over
+# v.1.3 - 06/15/2023
+# modified for python3 usage EAH
 
 # Given a BED file with a set of intersected regions from step 2 of ends_analysis.sh, in the format:
 # chr	start	end		name			str	bin	count
@@ -38,7 +26,7 @@
 import sys, os, argparse
 
 if len(sys.argv)<=1:
-	print "Usage: ends_analysis_process_intersect.py [options] infile.bed outfile.txt"
+	print("Usage: ends_analysis_process_intersect.py [options] infile.bed outfile.txt")
 	sys.exit(1)
 
 parser = argparse.ArgumentParser()
@@ -59,7 +47,7 @@ f = open(infile, 'r')
 line = f.readline()
 while line:
 	r = line.strip().split('\t')
-	currentbin = int(r[6]); geneID = r[3]; value = float(r[7])
+	currentbin = int(float(r[6])); geneID = r[3]; value = float(r[7])
 	if currentbin not in counts:
 		counts[currentbin] = {}
 		counts[currentbin][geneID] = [1,value]		# in counts, store 2-list with left value = # sites in bin, right value = sum of value

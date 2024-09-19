@@ -1,20 +1,7 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
-# Copyright 2017 Colette L Picard
-
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-
-# http://www.apache.org/licenses/LICENSE-2.0
-
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
-# --------------------------
+# v.1.0 by Colette L Picard, 06/01/2015
+# modified by EAH, 06/15/2023 - modified for python3 usage, change 'bin' to 'bin' as troubleshooting
 
 # Given a BED file with a set of intersected regions from step 2 of ends_analysis.sh, in the format:
 # chr	start	end		name			str	bin	count
@@ -32,7 +19,7 @@
 import sys
 
 if len(sys.argv)<=1:
-	print "Usage: ends_analysis_make_matrix.py infile.txt outfile.txt numIn numOut width"
+	print("Usage: ends_analysis_make_matrix.py infile.txt outfile.txt numIn numOut width")
 	sys.exit(1)
 
 infile = sys.argv[1]
@@ -42,10 +29,10 @@ numOut = int(sys.argv[4])
 width = int(sys.argv[5])
 
 # determine where to add empty columns corresponding to start, end and middle
-bin_5p = numOut/width
-bin_mid = (numIn/width)+(numOut/width)
-bin_3p = (numIn/width) + bin_mid
-bin_last = numOut/width + bin_3p
+bin_5p = int(numOut/width)
+bin_mid = int(numIn/width)+int(numOut/width)
+bin_3p = int((numIn/width)) + bin_mid
+bin_last = int(numOut/width) + bin_3p
 
 # get values for matrix
 counts = {}		# store counts per bin in nested dict, in form form {gene: {bin: (N,totcounts)}}
@@ -56,7 +43,7 @@ while line:
 	r = line.strip().split('\t')
 	# r[3] = gene ID, r[6] = bin, r[7] = value
 	feature = r[3]
-	bin = int(r[6])
+	bin = int(float(r[6]))
 	value = float(r[7])
 	
 	# add value to the dict
@@ -123,6 +110,7 @@ for gene in counts:
 	
 
 f.close()
+
 
 
 

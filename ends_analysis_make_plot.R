@@ -1,19 +1,5 @@
 #!/usr/bin/env Rscript
 
-# Copyright 2017 Colette L Picard
-
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-
-# http://www.apache.org/licenses/LICENSE-2.0
-
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 suppressPackageStartupMessages(library(ggplot2))
 suppressPackageStartupMessages(library(optparse))
 
@@ -27,8 +13,8 @@ suppressPackageStartupMessages(library(optparse))
 # Usage: ends_analysis_make_plot.R infile outprefix numIn numOut width
 
 args = commandArgs(trailingOnly = TRUE)
-if (length(args) <= 6) {
-	stop("Error: 7 arguments required. \nUsage: ends_analysis_make_plot.R infile yupper ylabel title outprefix numIn numOut width [options]")
+if (length(args) <= 8) {
+	stop("Error: 9 arguments required. \nUsage: ends_analysis_make_plot.R infile yupper ylabel title outprefix numIn numOut width linewidth [options]")
 }
 
 option_list <- list(
@@ -36,6 +22,8 @@ option_list <- list(
 		help = "Colors for samples in plot in order"),
 	make_option("--makebarchart", default=FALSE, action="store_true",
 		help = "Make a barchart instead of a line plot"),
+	make_option("--figwidth", default=12,
+		help = "Width of final plot"),
 	make_option("--PDF", default=FALSE, action="store_true",
 		help = "Output plot as PDF instead of PNG")
 	)
@@ -57,7 +45,7 @@ makebarchart = opt$makebarchart
 counts = read.table(infile, header = FALSE, sep = '\t')
 df_counts = data.frame(counts)
 if (colors != "") {
-	colors = strsplit(colors," ")[[1]]
+	colorstouse = strsplit(colors," ")[[1]]
 }
 
 # summary of calls to this script
@@ -102,9 +90,9 @@ if(numIn < 1000) { inKB = paste(numIn,"bp",sep="") } else { inKB = paste(numIn/1
 
 # output plot
 if (opt$PDF == TRUE) {
-	pdf(paste(outprefix,'_plot.pdf',sep=""), width = 12, height = 6.5, useDingbats=FALSE)
+	pdf(paste(outprefix,'_plot.pdf',sep=""), width = opt$figwidth, height = 6.5, useDingbats=FALSE)
 } else {
-	png(paste(outprefix,'_plot.png',sep=""), width = 12, height = 6.5, units = 'in', res = 300)
+	png(paste(outprefix,'_plot.png',sep=""), width = opt$figwidth, height = 6.5, units = 'in', res = 300)
 }
 if (makebarchart == TRUE) {
 	a = ggplot() + 
@@ -117,8 +105,8 @@ if (makebarchart == TRUE) {
 		geom_vline(xintercept=downstream_in + gaplen + 0.5, linetype="dotted") +
 		theme(panel.grid.minor.x=element_blank(), panel.grid.major.x=element_blank()) +
 		theme(panel.grid.minor.y=element_blank(), panel.grid.major.y=element_blank())
-	if (length(colors) != 1) {
-		a = a + scale_fill_manual(name = "Sample", values = colors)
+	if (length(colors) != "") {
+		a = a + scale_fill_manual(name = "Sample", values = colorstouse)
 	}
 	if (yupper != "NULL") {
 		a = a + expand_limits(x = 1, y = c(0,as.numeric(yupper)))
@@ -127,8 +115,14 @@ if (makebarchart == TRUE) {
 	}	
 	print(a)
 } else {
-	yupper = as.numeric(yupper)
-	if (length(colors) != 1) {
+	cat("Getting yupper\n")
+	if (yupper == "NULL") {
+		yupper = max(df_counts$counts)
+	} else {
+		yupper = as.numeric(yupper)
+	}
+	print(yupper)
+	if (colors != "") {
 		if (args[2] != "NULL") {
 			cat("Outputting plot with custom color scheme and y axis limits\n")
 			a = ggplot(pregap, aes(x=binID, y=counts, colour=sample)) +
@@ -140,8 +134,9 @@ if (makebarchart == TRUE) {
 				theme(panel.grid.minor.x=element_blank(), panel.grid.major.x=element_blank()) +
 				theme(panel.grid.minor.y=element_blank(), panel.grid.major.y=element_blank()) +
 				ggtitle(ftitle) + ylim(0, yupper) +
-				scale_color_manual("", values=colors)
-			if (numIn != 0) {
+				scale_color_manual("", values=colorstouse) +
+				theme(panel.background = element_rect(colour = "black", size=2, fill=NA))
+			if (numIn != 0 && numOut != 0) {
 				a = a + geom_vline(xintercept=upstream_out + 0.5, linetype="dotted") + geom_vline(xintercept=downstream_in + gaplen + 0.5, linetype="dotted")
 			}
 			print(a)
@@ -155,8 +150,9 @@ if (makebarchart == TRUE) {
 				xlab("") + ylab(ylabel) +
 				theme(panel.grid.minor.x=element_blank(), panel.grid.major.x=element_blank()) +
 				theme(panel.grid.minor.y=element_blank(), panel.grid.major.y=element_blank()) +
-				ggtitle(ftitle) + scale_color_manual("", values=colors)
-			if (numIn != 0) {
+				ggtitle(ftitle) + ylim(0, yupper) + scale_color_manual("", values=colorstouse) +
+				theme(panel.background = element_rect(colour = "black", size=2, fill=NA))
+			if (numIn != 0 && numOut != 0) {
 				a = a + geom_vline(xintercept=upstream_out + 0.5, linetype="dotted") + geom_vline(xintercept=downstream_in + gaplen + 0.5, linetype="dotted")
 			}
 			print(a)
@@ -172,8 +168,9 @@ if (makebarchart == TRUE) {
 				xlab("") + ylab(ylabel) +
 				theme(panel.grid.minor.x=element_blank(), panel.grid.major.x=element_blank()) +
 				theme(panel.grid.minor.y=element_blank(), panel.grid.major.y=element_blank()) +
-				ggtitle(ftitle) + ylim(0, yupper)
-			if (numIn != 0) {
+				ggtitle(ftitle) + ylim(0, yupper) + ylim(0, yupper) +
+				theme(panel.background = element_rect(colour = "black", size=2, fill=NA))
+			if (numIn != 0 && numOut != 0) {
 				a = a + geom_vline(xintercept=upstream_out + 0.5, linetype="dotted") + geom_vline(xintercept=downstream_in + gaplen + 0.5, linetype="dotted")
 			}
 			print(a)
@@ -186,9 +183,10 @@ if (makebarchart == TRUE) {
 				scale_x_continuous(breaks=c(1,upstream_out + 0.5,middle,middle+gaplen+1,downstream_in + gaplen + 0.5,downstream_out+gaplen), labels=c(paste("-",outKB,sep=""),"feature\nstart 5'",paste("+",inKB,sep=""),paste("-",inKB,sep=""),"feature\nend 3'",paste("+",outKB,sep=""))) +
 				xlab("") + ylab(ylabel) +
 				theme(panel.grid.minor.x=element_blank(), panel.grid.major.x=element_blank()) +
-				theme(panel.grid.minor.y=element_blank(), panel.grid.major.y=element_blank()) +
-				ggtitle(ftitle)
-			if (numIn != 0) {
+				theme(panel.grid.minor.y=element_blank(), panel.grid.major.y=element_blank()) + ylim(0, yupper) +
+				ggtitle(ftitle) +
+				theme(panel.background = element_rect(colour = "black", size=2, fill=NA))
+			if (numIn != 0 && numOut != 0) {
 				a = a + geom_vline(xintercept=upstream_out + 0.5, linetype="dotted") + geom_vline(xintercept=downstream_in + gaplen + 0.5, linetype="dotted")
 			}
 			print(a)

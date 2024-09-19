@@ -1,26 +1,9 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
-# Copyright 2017 Colette L Picard
-
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-
-# http://www.apache.org/licenses/LICENSE-2.0
-
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-   
 ''' 
 -------------------------
 Usage: assign_to_allele.py SNPs.bed reads.sam prefix [options]
 e.g. assign_to_allele.py Col_Cvi_SNPs.bed reads1.sam sample1
-
-This script is for regular paired-end or single-end reads. For bisulfite-
-treated reads, see assign_to_allele_PE_BS.py.
 
 This script goes through each read pair in the provided SAM file and assigns
 it to either Ref, Alt, none or both (conflicting) based on whether or not
@@ -36,16 +19,19 @@ prefix_`refname'.sam	(reference reads)
 prefix_`altname'.sam	(alternate reads)
 prefix_none.sam	(neither, no SNPs overlapping or multiple conflicting SNPs).
 
-v.1.3	03/06/2016
+v.1.4	08/08/2017
 by Colette Picard
 
 Version history:
 v.1.0 - initial build
+
 v.1.1 - added XR: and XA: tags to all reads, where XR = number of overlapping 
 SNPs with the ref allele, and XA = number of overlapping SNPs with the alt allele
+
 v.1.2 - (06/25/2015 by CLP) added *_snp_report output file that tracks # of reads overlapping a snp
 that were assigned to ref or alt. also added XL flag to reads that flags all
 the SNPs that they overlapped ("none" if no overlap).
+
 v.1.3 - (03/06/2016 by CLP) added option to analyze bisulfite-treated reads, where
 C->T transitions (first read of pair on forward strand) and G->A transitions (first
 read of pair is on reverse strand) - note that since some SNPs imitate methylation 
@@ -63,16 +49,22 @@ assignment (see updateMeString()):
 - Also changed previous XR flag, which stored SNPs with ref allele, to XD to avoid
 	repeated flags (bismark outputs an XR flag)
 
+v.1.4 - (08/08/2017) fixed issue where read pairs with names containing /1 and /2 for
+first and second read of pair, respectively, were never recognized as pairs due to not
+sharing the same read name. Script now drops any part of name after a forward slash ('/').
+
+v.1.5 - (03/18/2024) convert python 2 to python 3 - Elizabeth Hemenway
+
 -------------------------
 '''
  
 import sys, os, argparse, re
 
 if len(sys.argv) == 1:
-	print "-------------------------"
-	print "assign_to_allele v1.3		by Colette L. Picard, 03/06/2016"
-	print "-------------------------"
-	print """Given a set of reads (paired or single), assigns reads to either ref or alt
+	print("-------------------------")
+	print("assign_to_allele v1.4		by Colette L. Picard, 08/08/2017")
+	print("-------------------------")
+	print("""Given a set of reads (paired or single), assigns reads to either ref or alt
 based on the set of SNPs provided. Reads must be sorted by position, and the
 SNP file must be in .bed format with the fourth field = ref>alt (e.g. A>T, where A 
 is the reference base and T is the alt base). The first field in the SAM file (NAME)
@@ -107,15 +99,19 @@ strand must ignore C->T SNPs while alignments on the reverse must ignore G->A. S
 some SNPs imitate methylation (e.g. C->T looks like an unmethylated cytosine in alt but
 is actually a SNP), the bismark methylation string must also be updated according to
 results of allele assignment (see updateMeString()). 
-"""
-	print "\nUsage: assign_to_allele.py SNPs.bed reads.sam prefix [options]"
-	print "Options:"
-	print "--refname ref = name of the reference strain (to use for file naming) - e.g. Col"
-	print "--altname alt = name of the alternate strain (to use for file naming) - e.g. Cvi"
-	print "--relaxed = flag that enables all pairs to be treated as paired - default restricted to proper pairs"
-	print "--chgflag = flag that enables pairs treated as singletons to have SAM flag changed to singleton"
-	print "--bisulfite = flag that enables 'bisulfite mode'; C-T and G-A SNPs are ignored where appropriate"
-	print "-------------------------"
+
+v.1.5 - (03/18/2024) convert python 2 to python 3 - Elizabeth Hemenway
+""")
+	print("\nUsage: assign_to_allele.py SNPs.bed reads.sam prefix [options]")
+	print("Options:")
+	print("--refname ref = name of the reference strain (to use for file naming) - e.g. Col")
+	print("--altname alt = name of the alternate strain (to use for file naming) - e.g. Cvi")
+	print("--relaxed = flag that enables all pairs to be treated as paired - default restricted to proper pairs")
+	print("--chgflag = flag that enables pairs treated as singletons to have SAM flag changed to singleton")
+	print("--bisulfite = flag that enables 'bisulfite mode'; C-T and G-A SNPs are ignored where appropriate")
+	print("--allow_sub = flag that enables T and A to sub for C and G respectively in SNPs that are not C>T or G>A")
+	print("--updatemestr = flag that enables updating of methylation string to fix SNPs that look like methylation info")
+	print("-------------------------")
 	sys.exit(1)
 
 # read in arguments
@@ -136,7 +132,7 @@ parser.add_argument('--bisulfite', default = False, action="store_true",
 parser.add_argument('--allow_sub', default = False, action="store_true",
 	help = 'In bisulfite mode, enables T and A to sub for C and G respectively in SNPs that are not CT or GA')
 parser.add_argument('--updatemestr', default = False, action="store_true",
-	help = 'In bisulfite mode, enabled updating of methylation string to allow for SNPs that look like methylation info')
+	help = 'In bisulfite mode, enables updating of methylation string to allow for SNPs that look like methylation info')
 
 args = parser.parse_args()
 
@@ -151,27 +147,27 @@ bisulfite = args.bisulfite
 allow_sub = args.allow_sub
 updatemestr = args.updatemestr
 
-print "Running assign_to_allele v1.3		by Colette L. Picard, 03/06/2016"
-print "-------------------------"
-print "Assigning reads from:",reads,"to",refname,"or",altname,"according to SNP file",snp_file
-print "Saving to output files:"
-print "\t"+prefix+"_"+refname+".sam"
-print "\t"+prefix+"_"+altname+".sam"
-print "\t"+prefix+"_none.sam (includes conflicted reads, which are also saved to following file)"
-print "\t"+prefix+"_confl.sam"
+print("Running assign_to_allele v1.4		by Colette L. Picard, 08/08/2017")
+print("-------------------------")
+print("Assigning reads from:",reads,"to",refname,"or",altname,"according to SNP file",snp_file)
+print("Saving to output files:")
+print("\t"+prefix+"_"+refname+".sam")
+print("\t"+prefix+"_"+altname+".sam")
+print("\t"+prefix+"_none.sam (includes conflicted reads, which are also saved to following file)")
+print("\t"+prefix+"_confl.sam")
 if relaxed:
-	print "Proper pair not required for read to inherit mate's assignment, only map to same chr"
+	print("Proper pair not required for read to inherit mate's assignment, only map to same chr")
 else:
-	print "Proper pair required for read to inherit mate's assignment"
+	print("Proper pair required for read to inherit mate's assignment")
 if chgflag:
-	print "SAM flag of paired reads treated as singletons by this script will be set to unpaired"
+	print("SAM flag of paired reads treated as singletons by this script will be set to unpaired")
 else:
-	print "SAM flags left unchanged"
+	print("SAM flags left unchanged")
 if bisulfite:
-	print "Using bisulfite mode: C->T SNPs on forward strand and G->A SNPs on reverse will be ignored"
+	print("Using bisulfite mode: C->T SNPs on forward strand and G->A SNPs on reverse will be ignored")
 if bisulfite and updatemestr:
-	print "In bisulfite mode, updating methylation string to mask tricky SNPs"
-print "-------------------------"
+	print("In bisulfite mode, updating methylation string to mask tricky SNPs")
+print("-------------------------")
 
 #-------------------------------------------------------------
 
@@ -199,14 +195,14 @@ def expandCIGAR(cigar,pos):
 		len = int(match.group(1)[:-1])
 #COM		print "current type:",type,"and pos",pos,"and len",len
 		if type == 'M' or type == 'X' or type == '=':				# run of aligned bases of length len
-			indices = indices + range(pos,pos+len,1); pos = pos + len
+			indices = indices + list(range(pos,pos+len,1)); pos = pos + len
 		elif type == 'I':											# read has insertion of length len, ignore this base in seq
 			indices = indices + ['-']*len
 		elif type == 'D' or type == 'N':							# read has deletion of length len, skip ahead in ref
 			pos = pos + len
 		else:
-			print "Error: only CIGAR strings containing M,I,D,X,= or N recognized"
-			print "Cigar string is",cigar
+			print("Error: only CIGAR strings containing M,I,D,X,= or N recognized")
+			print("Cigar string is",cigar)
 			sys.exit(1)
 	return indices
 		
@@ -229,13 +225,13 @@ def assignToParent(read, bisulfite = False):
 	# if in bisulfite mode, look for XG field which will indicate whether CT or GA conversions occurred on that strand
 	if bisulfite:
 		if len(read.strip().split('XG:Z:')) == 1:
-			print "Error: when using --bisulfite option, SAM files must be generated by bismark, which adds required SAM field XG. Could not find field XG."
+			print("Error: when using --bisulfite option, SAM files must be generated by bismark, which adds required SAM field XG. Could not find field XG.")
 			sys.exit(1)
 		if len(read.strip().split('XG:Z:')[1]) < 2:
-			print "Error: when using --bisulfite option, bismark XG field must be followed by 'CT' or 'GA', but is here followed by:",read.strip().split('XG:Z:')[1]
+			print("Error: when using --bisulfite option, bismark XG field must be followed by 'CT' or 'GA', but is here followed by:",read.strip().split('XG:Z:')[1])
 		toIgnore = read.strip().split('XG:Z:')[1][0:2]
 		if toIgnore != "GA" and toIgnore != "CT":
-			print "Error: when using --bisulfite option, bismark XG field must be followed by 'CT' or 'GA', but is here followed by:",read.strip().split('XG:Z:')[1]
+			print("Error: when using --bisulfite option, bismark XG field must be followed by 'CT' or 'GA', but is here followed by:",read.strip().split('XG:Z:')[1])
 	else:
 		toIgnore = "none"
 	
@@ -250,8 +246,8 @@ def assignToParent(read, bisulfite = False):
 	try:
 		assert len(cigar_iter) == len(seq)				# list should always be same length as read
 	except AssertionError:
-		print "Internal Error: expandCIGAR returned index list of size",len(cigar_iter),"when length of read is",len(read)
-		print "Error for read:",read
+		print("Internal Error: expandCIGAR returned index list of size",len(cigar_iter),"when length of read is",len(read))
+		print("Error for read:",read)
 		sys.exit(1)
 	
 	# find overlapping snps, keep track of them
@@ -381,7 +377,7 @@ def updateMeString(call, read):
 #	print "Sequence is:",seq
 #	print "Mestr is:",''.join(mestr)
 	if len(seq) != len(mestr):
-		print "Error: methylation string and sequence not same length in following read:"; print read.strip(); print "Sequence:",seq; print "Methylation str:",mestr
+		print("Error: methylation string and sequence not same length in following read:"); print(read.strip()); print("Sequence:",seq); print("Methylation str:",mestr)
 		sys.exit(1)
 		
 	cigar_iter = expandCIGAR(cigar,seq_start)			# list of positions in reference corresponding to positions in read
@@ -451,12 +447,12 @@ def updateMeString(call, read):
 global SNPs
 SNPs = {}
 	
-print "Reading in SNP file",snp_file
+print("Reading in SNP file",snp_file)
 try:
 	f = open(snp_file, 'r') 
-except IOError, e:
-	print e
-	print 'Could not open SNP file',snp_file,'...'
+except IOError as e:
+	print(e)
+	print('Could not open SNP file',snp_file,'...')
 	sys.exit(2)
 
 line = f.readline()
@@ -471,15 +467,15 @@ while line:
 	if not (int(ll[2]) in SNPs[ll[0].lower()]):
 		SNPs[ll[0].lower()][int(ll[2])] = [ll[3][0],ll[3][2],0,0]
 	else:
-		print "Error: there is more than one SNP at position",ll[1],"on",ll[0],"please check your SNP file for errors."
+		print("Error: there is more than one SNP at position",ll[1],"on",ll[0],"please check your SNP file for errors.")
 		sys.exit(1)
 	line = f.readline()
 			
 f.close()
 
-print "# of SNPs on each chromosome or scaffold:"
+print("# of SNPs on each chromosome or scaffold:")
 for chr in SNPs:
-	print chr+"\t"+str(len(SNPs[chr]))
+	print(chr+"\t"+str(len(SNPs[chr])))
 
 #-------------------------------------------------------------
 # Open output files and initialize counters
@@ -488,16 +484,16 @@ try:
 	out_alt = open(prefix+"_"+altname+".sam", 'w')
 	out_none = open(prefix+"_none.sam", 'w')
 	out_confl = open(prefix+"_confl.sam", 'w')
-except IOError, e:
-	print e
-	print 'Could not create output files.'
+except IOError as e:
+	print(e)
+	print('Could not create output files.')
 	sys.exit(2)
 	
 try:
 	f = open(reads, 'r')
-except IOError, e:
-	print e
-	print 'Could not open input SAM file',reads,'...'
+except IOError as e:
+	print(e)
+	print('Could not open input SAM file',reads,'...')
 	sys.exit(2)
 
 pairs_ref = pairs_alt = pairs_none = pairs_confl = pairs = 0
@@ -505,7 +501,7 @@ single_ref = single_alt = single_none = single_confl = single = 0
 
 #-------------------------------------------------------------
 # Go through all reads one by one, check status and assign
-print "-------------------------"
+print("-------------------------")
 line = f.readline()
 # skip all lines starting with "@" (standard SAM header), add header to all output files
 while line.startswith("@"):
@@ -514,8 +510,9 @@ while line.startswith("@"):
 	out_none.write(line)
 	out_confl.write(line)
 	line = f.readline()
-print "Done writing headers to all output files."
-print "Now going through all reads from",reads
+
+print("Done writing headers to all output files.")
+print("Now going through all reads from",reads)
 	
 cache = {}			# store information about already assigned reads here so they can find their mates
 					# dict = {name+pos: ["ref" or "alt" or "none",line]}
@@ -533,7 +530,7 @@ while line:
 	if chr != oldChr:		
 		# new chromosome, no mates remain to be found, output all remaining in cache as singletons
 		# and clear the cache for the next chromosome
-		print "Done reading reads on",oldChr
+		print("Done reading reads on",oldChr)
 		unmatched=0
 		for key in cache:
 			unmatched+=1
@@ -563,18 +560,18 @@ while line:
 				single_confl+=1; out_none.write(record)
 				out_confl.write(record)
 			else:
-				print "Internal Error 1: assignToParent returned illegal assignment",call,"of this read:"
-				print line
+				print("Internal Error 1: assignToParent returned illegal assignment",call,"of this read:")
+				print(line)
 				sys.exit(1)
 		if unmatched > 0:
-			print str(unmatched),"reads on",oldChr,"remained unmatched in the cache."
+			print(str(unmatched),"reads on",oldChr,"remained unmatched in the cache.")
 		cache.clear()
 	else:
 		# still on same chromosome, confirm that positions are increasing (i.e. file is sorted)
 		try:
 			assert curpos >= oldPos
 		except AssertionError:
-			print "Error: input .sam file is not sorted. Exiting."
+			print("Error: input .sam file is not sorted. Exiting.")
 			sys.exit(1)
 			
 	# now, use SAM flag to determine if the read is mapped
@@ -615,25 +612,26 @@ while line:
 				single_confl+=1; out_none.write(record)
 				out_confl.write(record)
 			else:
-				print "Internal Error 2: assignToParent returned illegal assignment",call,"of this read:"
-				print call
-				print line
+				print("Internal Error 2: assignToParent returned illegal assignment",call,"of this read:")
+				print(call)
+				print(line)
 				sys.exit(1)
 
 		# if the read has a mate that is mapped, try to pair with mate, key is name+pos (name+matepos for mate)
 		else:
 #			print "looking for pair of"
 #			print line.strip()
-			name = r[0]; pos = r[3]; matepos = r[7]		# mate should have name+matepos+pos in cache
+			name = r[0].split('/')[0]; pos = r[3]; matepos = r[7]		# mate should have name+matepos+pos in cache
 			# look for potential mate
-			if name+matepos+pos in cache:
-#				print cache[name+matepos+pos][1].strip()
+			key = name+';'+matepos+';'+pos
+			if key in cache:
+#				print "Mate is:",cache[key][1].strip()
 				# mate was in the cache, determine where it should be assigned then remove from cache
 				pairs+=1
-				matecall = cache[name+matepos+pos][0]		# assignment of the mate
+				matecall = cache[key][0]		# assignment of the mate
 				
 				read1 = call[1]
-				read2 = cache[name+matepos+pos][1]
+				read2 = cache[key][1]
 					
 				if call[0] == "none" and matecall == "none":
 					if bisulfite and updatemestr:
@@ -641,7 +639,7 @@ while line:
 						read2 = updateMeString("none", read2)
 					pairs_none+=1; out_none.write(read1+read2)
 				elif (call[0] == "ref" and matecall == "none") or (call[0] == "none" and matecall == "ref") or (call[0] == "ref" and matecall == "ref"):
-					all_snps = set(call[2] + cache[name+matepos+pos][2])		# get all snps overlapped by either mate in the pair without double counting
+					all_snps = set(call[2] + cache[key][2])		# get all snps overlapped by either mate in the pair without double counting
 					for s in all_snps:			# add 1 to ref count for all SNPs overlapping this read pair
 						ss = s.split(".")
 						SNPs[ss[0]][int(ss[1])][2]+=1					
@@ -650,7 +648,7 @@ while line:
 						read2 = updateMeString("ref", read2)
 					pairs_ref+=1; out_ref.write(read1+read2)
 				elif (call[0] == "alt" and matecall == "none") or (call[0] == "none" and matecall == "alt") or (call[0] == "alt" and matecall == "alt"):
-					all_snps = set(call[2] + cache[name+matepos+pos][2])		# get all snps overlapped by either mate in the pair without double counting
+					all_snps = set(call[2] + cache[key][2])		# get all snps overlapped by either mate in the pair without double counting
 					for s in all_snps:			# add 1 to alt count for all SNPs overlapping this read pair
 						ss = s.split(".")
 						SNPs[ss[0]][int(ss[1])][3]+=1
@@ -666,11 +664,11 @@ while line:
 					out_confl.write(read2+read1)
 				
 				# delete the mate from the cache to save space
-				del cache[name+matepos+pos]
+				del cache[key]
 				
 			else:
 				# mate was not in cache, add this read to cache instead
-				cache[name+pos+matepos] = call
+				cache[name+';'+pos+';'+matepos] = call
 				if len(cache) > maxCacheSize:
 					maxCacheSize = len(cache)
 		
@@ -678,7 +676,7 @@ while line:
 	oldPos = curpos; oldChr = chr
 	
 # done looping through reads, clear what remains in the cache and finish
-print "Done reading reads on",oldChr
+print("Done reading reads on",oldChr)
 unmatched = 0
 for key in cache:
 	single+=1
@@ -707,19 +705,19 @@ for key in cache:
 		single_confl+=1; out_none.write(record)
 		out_confl.write(record)
 	else:
-		print "Internal Error 3: assignToParent returned illegal assignment",call,"of this read:"
-		print line
+		print("Internal Error 3: assignToParent returned illegal assignment",call,"of this read:")
+		print(line)
 		sys.exit(1)
 if unmatched > 0:
-	print str(unmatched),"reads on",oldChr,"remained unmatched in the cache."
+	print(str(unmatched),"reads on",oldChr,"remained unmatched in the cache.")
 cache.clear()
 
 # also output list of SNPs with added # ref and # alt info
 try:
 	out_snps = open(prefix+"_snp_report.bed", 'w')
-except IOError, e:
-	print e
-	print 'Could not create output file',prefix+"_snp_report.bed"
+except IOError as e:
+	print(e)
+	print('Could not create output file',prefix+"_snp_report.bed")
 	sys.exit(2)
 
 for chr in SNPs:
@@ -739,37 +737,37 @@ if single > 0:
 	psingle_confl = float(single_confl) / single * 100
 	psingle_none = float(single_none) / single * 100
 	
-print "-------------------------"
-print "Done assigning reads. Final tally:"
+print("-------------------------")
+print("Done assigning reads. Final tally:")
 if relaxed:
-	print "Number of read pairs treated as pairs (both mates mapped, on the same chromosome):",pairs
+	print("Number of read pairs treated as pairs (both mates mapped, on the same chromosome):",pairs)
 else:
-	print "Number of read pairs treated as pairs (proper pairs):", pairs
+	print("Number of read pairs treated as pairs (proper pairs):", pairs)
 if pairs > 0:
-	print "# pairs assigned to %s: %.0f (%0.2f%%)" % ( refname, pairs_ref, ppairs_ref )
-	print "# pairs assigned to %s: %.0f (%0.2f%%)" % ( altname, pairs_alt, ppairs_alt )
-	print "# conflicted pairs (saved to %s_none.sam): %.0f (%0.2f%%)" % ( prefix, pairs_confl, ppairs_confl )
-	print "# pairs that could not be assigned: %.0f (%0.2f%%)" % ( pairs_none, ppairs_none )
+	print("# pairs assigned to %s: %.0f (%0.2f%%)" % ( refname, pairs_ref, ppairs_ref ))
+	print("# pairs assigned to %s: %.0f (%0.2f%%)" % ( altname, pairs_alt, ppairs_alt ))
+	print("# conflicted pairs (saved to %s_none.sam): %.0f (%0.2f%%)" % ( prefix, pairs_confl, ppairs_confl ))
+	print("# pairs that could not be assigned: %.0f (%0.2f%%)" % ( pairs_none, ppairs_none ))
 else:
-	print "# pairs assigned to %s: 0" % ( refname )
-	print "# pairs assigned to %s: 0" % ( altname )
-	print "# conflicted pairs (saved to %s_none.sam): 0" % ( prefix )
-	print "# pairs that could not be assigned: 0"
+	print("# pairs assigned to %s: 0" % ( refname ))
+	print("# pairs assigned to %s: 0" % ( altname ))
+	print("# conflicted pairs (saved to %s_none.sam): 0" % ( prefix ))
+	print("# pairs that could not be assigned: 0")
 
-print "\nNumber of singleton reads (including pairs treated as singles):", single
+print("\nNumber of singleton reads (including pairs treated as singles):", single)
 if single > 0:
-	print "# singletons assigned to %s: %.0f (%0.2f%%)" % ( refname, single_ref, psingle_ref )
-	print "# singletons assigned to %s: %.0f (%0.2f%%)" % ( altname, single_alt, psingle_alt )
-	print "# conflicted singletons (saved to %s_none.sam): %.0f (%0.2f%%)" % ( prefix, single_confl, psingle_confl )
-	print "# singletons that could not be assigned: %.0f (%0.2f%%)" % ( single_none, psingle_none )
+	print("# singletons assigned to %s: %.0f (%0.2f%%)" % ( refname, single_ref, psingle_ref ))
+	print("# singletons assigned to %s: %.0f (%0.2f%%)" % ( altname, single_alt, psingle_alt ))
+	print("# conflicted singletons (saved to %s_none.sam): %.0f (%0.2f%%)" % ( prefix, single_confl, psingle_confl ))
+	print("# singletons that could not be assigned: %.0f (%0.2f%%)" % ( single_none, psingle_none ))
 else:
-	print "# singletons assigned to %s: 0" % ( refname )
-	print "# singletons assigned to %s: 0" % ( altname )
-	print "# conflicted singletons (saved to %s_none.sam): 0" % ( prefix )
-	print "# singletons that could not be assigned: 0"
+	print("# singletons assigned to %s: 0" % ( refname ))
+	print("# singletons assigned to %s: 0" % ( altname ))
+	print("# conflicted singletons (saved to %s_none.sam): 0" % ( prefix ))
+	print("# singletons that could not be assigned: 0")
 
-print ""
-print "Max size of cache:",maxCacheSize
+print("")
+print("Max size of cache:",maxCacheSize)
 
 out_ref.close()
 out_alt.close()
@@ -777,13 +775,14 @@ out_none.close()
 
 if single_none == 0 and pairs_none == 0 and pairs_confl == 0 and single_confl == 0:
 	os.remove(prefix+"_none.sam")
-	print prefix+"_none.sam contained no records and was deleted"
+	print(prefix+"_none.sam contained no records and was deleted")
 if pairs_alt == 0 and single_alt == 0:
 	os.remove(prefix+"_"+altname+".sam")
-	print prefix+"_"+altname+".sam contained no records and was deleted"
+	print(prefix+"_"+altname+".sam contained no records and was deleted")
 if pairs_ref == 0 and single_ref == 0:
 	os.remove(prefix+"_"+refname+".sam")
-	print prefix+"_"+refname+".sam contained no records and was deleted"
+	print(prefix+"_"+refname+".sam contained no records and was deleted")
+
 
 
 
