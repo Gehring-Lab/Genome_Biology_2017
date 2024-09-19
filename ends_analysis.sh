@@ -166,7 +166,7 @@ useValue=0									# calculate average over this field (if useValue = 0, uses de
 minN=0										# don't plot point for this bin if fewer than this many genes/features were used to calc. it
 linewidth=1
 Verbose=false
-writemat=true	#EAH I'm trying to force this to work for me, change back to false if needed later.
+writemat=false	#EAH To get this feature to work for me I change to true
 overwrite=false
 parallel=false
 unweighted=false
@@ -277,7 +277,7 @@ elif [ ! -f "$path_to_scripts"/ends_analysis_make_plot.R ]; then
 	echo "Error: required helper script $path_to_scripts/ends_analysis_make_plot.R could not be located, see option -s"; exit 1
 fi
 if "$writemat"; then
-	if [ ! -f "$path_to_scripts"/ends_analysis_make_matrix_eah.py ]; then
+	if [ ! -f "$path_to_scripts"/ends_analysis_make_matrix.py ]; then
 		echo "Error: required helper script $path_to_scripts/ends_analysis_make_matrix.py could not be located, see option -s"; exit 1; fi; fi
 
 # Check that all programs required on PATH are installed
@@ -626,7 +626,7 @@ for ((i=0;i<${#namearray[@]};++i)); do
 	else
 		weight=" --unweighted"
 	fi	
-	python3 $path_to_scripts/ends_analysis_process_intersect_eah.py "${outprefix}_${namearray[i]}_intersect.bed" "${outprefix}_${namearray[i]}_counts.txt"${weight}	
+	python3 $path_to_scripts/ends_analysis_process_intersect.py "${outprefix}_${namearray[i]}_intersect.bed" "${outprefix}_${namearray[i]}_counts.txt"${weight}	
 done
 echo ""
 
@@ -639,7 +639,7 @@ if "$writemat"; then
 		pid=()
 		for ((i=0;i<${#namearray[@]};++i)); do
 	#		echo "Converting results of step 2 into matrix format for ${namearray[i]}..."
-			cmd="python3 $path_to_scripts/ends_analysis_make_matrix_eah.py ${outprefix}_${namearray[i]}_intersect.bed ${outprefix}_${namearray[i]}_mat.txt $numIn $numOut $width"
+			cmd="python3 $path_to_scripts/ends_analysis_make_matrix.py ${outprefix}_${namearray[i]}_intersect.bed ${outprefix}_${namearray[i]}_mat.txt $numIn $numOut $width"
 			sbatch -p 20 --mem=32gb --cpus-per-task=42 --o "${outprefix}_SLURM_logs/make_matrix_${namearray[i]}.txt" --wait --wrap " "$cmd" & pid[i]=$! "
 		done
 		for ((i=0;i<${#namearray[@]};++i)); do
@@ -648,7 +648,7 @@ if "$writemat"; then
 	else
 		for ((i=0;i<${#namearray[@]};++i)); do
 			echo "Converting results of step 2 into matrix format for ${namearray[i]}..."
-			python3 $path_to_scripts/ends_analysis_make_matrix_eah.py "${outprefix}_${namearray[i]}_intersect.bed" "${outprefix}_${namearray[i]}_mat.txt" $numIn $numOut $width
+			python3 $path_to_scripts/ends_analysis_make_matrix.py "${outprefix}_${namearray[i]}_intersect.bed" "${outprefix}_${namearray[i]}_mat.txt" $numIn $numOut $width
 		done
 	fi
 	echo ""
